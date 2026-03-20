@@ -144,3 +144,9 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [],         # ← auth completely off
 }
+
+# CORS settings
+CORS_ALLOWED_ORIGINS = [
+    'https://backend-eight-amber-20.vercel.app',  # ← aapka Vercel URL
+    'http://localhost:3000',
+]
