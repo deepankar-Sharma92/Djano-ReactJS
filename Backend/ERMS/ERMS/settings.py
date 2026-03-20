@@ -147,6 +147,6 @@ REST_FRAMEWORK = {
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
-    'https://backend-eight-amber-20.vercel.app',  # ← aapka Vercel URL
+    'https://backend-eight-amber-20.vercel.app',
     'http://localhost:3000',
 ]
