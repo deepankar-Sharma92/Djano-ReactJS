@@ -25,7 +25,11 @@ SECRET_KEY = 'django-insecure-75oazi49_9$v$4qqs2br)9vb_z9o#@u92j1y=3jm)b!3og(&%l
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'djano-reactjs.onrender.com',  # ← Render URL
+    'localhost',
+    '127.0.0.1',
+]
 
 
 # Application definition
