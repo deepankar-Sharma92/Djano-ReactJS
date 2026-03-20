@@ -1,0 +1,10 @@
+echo "Frontend/node_modules/
+Backend/venv/
+node_modules/
+build/
+*.sqlite3
+__pycache__/
+*.pyc
+.env
+.env.local
+.DS_Store"
