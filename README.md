@@ -147,7 +147,7 @@ npm start
 
 ## 📸 Screenshots
 
-> Dashboard with live stats, employee table, leave management and department breakdown.
+![Dashboard](dashboard.png)
 
 ---
 
