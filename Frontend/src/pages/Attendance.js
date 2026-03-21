@@ -1,6 +1,6 @@
 // src/pages/Attendance.js
 import React, { useEffect, useState, useCallback } from 'react';
-import api from '../api/api';  // ✅ fixed: was using wrong import 'dashboardAPI'
+import api from '../api/api';
 
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
@@ -9,7 +9,6 @@ const STATUS_MAP = {
   absent:   { bg: 'rgba(244,63,94,0.1)',    color: '#fb7185', label: 'Absent',   dot: '#f43f5e' },
   late:     { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24', label: 'Late',     dot: '#f59e0b' },
   half_day: { bg: 'rgba(139,92,246,0.12)',  color: '#a78bfa', label: 'Half Day', dot: '#8b5cf6' },
-  holiday:  { bg: 'rgba(20,184,166,0.1)',   color: '#2dd4bf', label: 'Holiday',  dot: '#14b8a6' },
 };
 
 const AVATAR_GRADIENTS = [
@@ -43,14 +42,10 @@ function StatMini({ label, value, color }) {
       border: `1px solid ${color}30`,
       borderRadius: '10px',
       padding: '14px 18px',
-      minWidth: '110px',
+      minWidth: '100px',
     }}>
-      <div style={{ fontSize: '22px', fontWeight: '800', color: '#f1f5f9', ...mono, lineHeight: 1 }}>
-        {value}
-      </div>
-      <div style={{ fontSize: '11px', color: '#475569', marginTop: '5px', fontWeight: '500' }}>
-        {label}
-      </div>
+      <div style={{ fontSize: '24px', fontWeight: '800', color: '#f1f5f9', ...mono, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: '11px', color: '#475569', marginTop: '5px', fontWeight: '500' }}>{label}</div>
       <div style={{ height: '2px', background: color, borderRadius: '2px', marginTop: '10px', opacity: 0.7 }} />
     </div>
   );
@@ -58,95 +53,115 @@ function StatMini({ label, value, color }) {
 
 export default function Attendance() {
   const [records,    setRecords]    = useState([]);
+  const [employees,  setEmployees]  = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
-  const [filterDate, setFilterDate] = useState('');         // AttendanceViewSet filterset_fields: date
-  const [filterStat, setFilterStat] = useState('');         // filterset_fields: status
-  const [search,     setSearch]     = useState('');
+  const [showModal,  setShowModal]  = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [filterDate, setFilterDate] = useState('');
+  const [filterStat, setFilterStat] = useState('');
+  const [toast,      setToast]      = useState(null);
 
-  // ── fetch from AttendanceViewSet ──
-  const load = useCallback(async () => {
+  // Mark attendance form — AttendanceViewSet fields
+  const [form, setForm] = useState({
+    employee:  '',
+    date:      new Date().toISOString().split('T')[0],
+    status:    'present',
+  });
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  // ── Fetch attendance — AttendanceViewSet ──
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
-
       let url = '/attendance/?ordering=-date';
       if (filterDate) url += `&date=${filterDate}`;
       if (filterStat) url += `&status=${filterStat}`;
 
-      const res = await api.get(url);    // ✅ fixed: was using undefined 'API'
-      setRecords(res.data.results ?? res.data);
-    } catch (err) {
-      setError('Failed to load attendance records.');
-      console.error(err);
+      const [attRes, empRes] = await Promise.all([
+        api.get(url),
+        api.get('/employees/?ordering=first_name'),
+      ]);
+      setRecords(attRes.data.results ?? attRes.data);
+      setEmployees(empRes.data.results ?? empRes.data);
+    } catch {
+      showToast('Failed to load attendance.', 'error');
     } finally {
       setLoading(false);
     }
   }, [filterDate, filterStat]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // ── client-side name search ──
-  const filtered = records.filter((r) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      r.employee_name?.toLowerCase().includes(q) ||
-      String(r.employee)?.includes(q)
-    );
-  });
+  // ── Mark Attendance — AttendanceViewSet POST ──
+  const handleMark = async (e) => {
+    e.preventDefault();
+    if (!form.employee || !form.date || !form.status) {
+      showToast('Please fill all fields.', 'error');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await api.post('/attendance/', {
+        employee: parseInt(form.employee),
+        date:     form.date,
+        status:   form.status,
+      });
+      showToast('Attendance marked! ✅');
+      setShowModal(false);
+      setForm({ employee: '', date: new Date().toISOString().split('T')[0], status: 'present' });
+      loadData();
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Attendance already marked for this date.';
+      showToast(msg, 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-  // ── summary counts ──
-  const count = (s) => filtered.filter((r) => r.status === s).length;
-  const today = new Date().toISOString().split('T')[0];
+  // Summary counts
+  const count = (s) => records.filter((r) => r.status === s).length;
 
   return (
     <div style={css.root}>
 
-      {/* ── Page header ── */}
-      <div style={css.pageHeader}>
-        <div>
-          <div style={css.pageTitle}>Attendance Records</div>
-          <div style={css.pageSub}>
-            {filtered.length} records
-            {filterDate && ` · ${filterDate}`}
-          </div>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          ...css.toast,
+          background: toast.type === 'error' ? 'rgba(244,63,94,0.15)' : 'rgba(16,185,129,0.15)',
+          borderColor: toast.type === 'error' ? 'rgba(244,63,94,0.3)' : 'rgba(16,185,129,0.3)',
+          color: toast.type === 'error' ? '#fb7185' : '#34d399',
+        }}>
+          {toast.msg}
         </div>
+      )}
 
-        {/* Mark today shortcut */}
-        <button style={css.primaryBtn} onClick={() => setFilterDate(today)}>
-          📅 Today
+      {/* Header */}
+      <div style={css.header}>
+        <div>
+          <div style={css.pageTitle}>Attendance</div>
+          <div style={css.pageSub}>{records.length} records{filterDate && ` · ${filterDate}`}</div>
+        </div>
+        <button style={css.addBtn} onClick={() => setShowModal(true)}>
+          + Mark Attendance
         </button>
       </div>
 
-      {/* ── Summary mini-stats ── */}
-      <div style={css.statRow}>
-        <StatMini label="Total"    value={filtered.length}  color="#3b82f6" />
+      {/* Summary Stats */}
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
+        <StatMini label="Total"    value={records.length}   color="#3b82f6" />
         <StatMini label="Present"  value={count('present')} color="#10b981" />
         <StatMini label="Absent"   value={count('absent')}  color="#f43f5e" />
         <StatMini label="Late"     value={count('late')}    color="#f59e0b" />
         <StatMini label="Half Day" value={count('half_day')} color="#8b5cf6" />
-        <StatMini label="Holiday"  value={count('holiday')} color="#14b8a6" />
       </div>
 
-      {/* ── Filters — AttendanceViewSet filterset_fields: employee, status, date ── */}
+      {/* Filters */}
       <div style={css.filterBar}>
-        {/* Search */}
-        <div style={css.searchBox}>
-          <span style={{ color: '#475569', fontSize: '13px' }}>🔍</span>
-          <input
-            style={css.searchInput}
-            placeholder="Search employee name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <span style={{ color: '#475569', cursor: 'pointer', fontSize: '12px' }}
-              onClick={() => setSearch('')}>✕</span>
-          )}
-        </div>
-
-        {/* Date filter */}
         <div style={css.filterGroup}>
           <span style={css.filterLabel}>📅 Date</span>
           <input
@@ -160,7 +175,6 @@ export default function Attendance() {
           )}
         </div>
 
-        {/* Status filter */}
         <div style={css.filterGroup}>
           <span style={css.filterLabel}>⬤ Status</span>
           <select
@@ -168,89 +182,70 @@ export default function Attendance() {
             value={filterStat}
             onChange={(e) => setFilterStat(e.target.value)}
           >
-            <option value="">All Statuses</option>
+            <option value="">All</option>
             <option value="present">Present</option>
             <option value="absent">Absent</option>
             <option value="late">Late</option>
             <option value="half_day">Half Day</option>
-            <option value="holiday">Holiday</option>
           </select>
         </div>
 
-        {/* Reset */}
-        {(filterDate || filterStat || search) && (
+        {(filterDate || filterStat) && (
           <button style={css.resetBtn}
-            onClick={() => { setFilterDate(''); setFilterStat(''); setSearch(''); }}>
-            Reset Filters
+            onClick={() => { setFilterDate(''); setFilterStat(''); }}>
+            Reset
           </button>
         )}
+
+        <button
+          style={{ ...css.addBtn, marginLeft: 'auto', padding: '7px 14px', fontSize: '12px' }}
+          onClick={() => setFilterDate(new Date().toISOString().split('T')[0])}
+        >
+          📅 Today
+        </button>
       </div>
 
-      {/* ── Error ── */}
-      {error && (
-        <div style={css.errorBox}>
-          ⚠ {error}
-          <span style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: '12px' }}
-            onClick={load}>Retry ↺</span>
-        </div>
-      )}
-
-      {/* ── Table — AttendanceViewSet fields: employee, date, status ── */}
+      {/* Table */}
       <div style={css.tableCard}>
         <div style={{ overflowX: 'auto' }}>
           <table style={css.table}>
             <thead>
               <tr>
-                {['#', 'Employee', 'Date', 'Status', 'Check In', 'Check Out', 'Notes'].map((h) => (
+                {['#', 'Employee', 'Date', 'Status'].map((h) => (
                   <th key={h} style={css.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
+                <tr><td colSpan={4} style={css.centerCell}>Loading…</td></tr>
+              ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={css.centerCell}>
-                    <div style={css.loadingWrap}>
-                      <div style={css.spinner} />
-                      Loading attendance records…
-                    </div>
-                  </td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={css.centerCell}>
-                    <div style={{ fontSize: '32px', marginBottom: '10px' }}>📋</div>
-                    <div style={{ color: '#334155', fontSize: '13px' }}>
-                      {filterDate || filterStat ? 'No records match your filters.' : 'No attendance records found.'}
-                    </div>
+                  <td colSpan={4} style={css.centerCell}>
+                    <div style={{ fontSize: '28px', marginBottom: '8px' }}>📋</div>
+                    No attendance records found.
                   </td>
                 </tr>
               ) : (
-                filtered.map((r, i) => {
+                records.map((r, i) => {
                   const name = r.employee_name || `Employee #${r.employee}`;
                   const initials = name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-                  const st = STATUS_MAP[r.status] || STATUS_MAP.present;
-
                   return (
-                    <tr
-                      key={r.id}
-                      style={{ transition: 'background 0.15s', cursor: 'default' }}
+                    <tr key={r.id}
+                      style={{ transition: 'background 0.15s' }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.025)')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      {/* Row number */}
                       <td style={{ ...css.td, color: '#1e293b', ...mono, fontSize: '11px' }}>
                         {String(i + 1).padStart(2, '0')}
                       </td>
-
-                      {/* Employee */}
                       <td style={css.td}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <div style={{
                             width: '30px', height: '30px', borderRadius: '8px',
                             background: AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length],
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '11px', fontWeight: '800', color: '#fff', flexShrink: 0,
+                            fontSize: '11px', fontWeight: '800', color: '#fff',
                           }}>
                             {initials}
                           </div>
@@ -259,36 +254,8 @@ export default function Attendance() {
                           </span>
                         </div>
                       </td>
-
-                      {/* Date */}
-                      <td style={{ ...css.td, ...mono, fontSize: '11.5px', color: '#64748b' }}>
-                        {r.date}
-                      </td>
-
-                      {/* Status */}
-                      <td style={css.td}>
-                        <Pill status={r.status} />
-                      </td>
-
-                      {/* Check In */}
-                      <td style={{ ...css.td, ...mono, fontSize: '11.5px', color: '#475569' }}>
-                        {r.check_in || <span style={{ color: '#1e293b' }}>—</span>}
-                      </td>
-
-                      {/* Check Out */}
-                      <td style={{ ...css.td, ...mono, fontSize: '11.5px', color: '#475569' }}>
-                        {r.check_out || <span style={{ color: '#1e293b' }}>—</span>}
-                      </td>
-
-                      {/* Notes */}
-                      <td style={{ ...css.td, fontSize: '12px', color: '#334155', maxWidth: '160px' }}>
-                        <span style={{
-                          overflow: 'hidden', textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap', display: 'block',
-                        }}>
-                          {r.notes || '—'}
-                        </span>
-                      </td>
+                      <td style={{ ...css.td, ...mono, fontSize: '11.5px', color: '#64748b' }}>{r.date}</td>
+                      <td style={css.td}><Pill status={r.status} /></td>
                     </tr>
                   );
                 })
@@ -296,63 +263,127 @@ export default function Attendance() {
             </tbody>
           </table>
         </div>
-
-        {/* Footer row count */}
-        {!loading && filtered.length > 0 && (
-          <div style={css.tableFooter}>
-            Showing <strong style={{ color: '#e2e8f0' }}>{filtered.length}</strong> records
+        {!loading && records.length > 0 && (
+          <div style={{ padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.04)', fontSize: '11.5px', color: '#334155' }}>
+            Showing <strong style={{ color: '#e2e8f0' }}>{records.length}</strong> records
             {(filterDate || filterStat) && ' (filtered)'}
           </div>
         )}
       </div>
 
+      {/* Mark Attendance Modal */}
+      {showModal && (
+        <div style={css.overlay} onClick={() => setShowModal(false)}>
+          <div style={css.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={css.modalHeader}>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9' }}>Mark Attendance</div>
+              <span style={{ cursor: 'pointer', color: '#475569', fontSize: '18px' }}
+                onClick={() => setShowModal(false)}>✕</span>
+            </div>
+
+            <form onSubmit={handleMark} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
+              {/* Employee Select */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={css.fieldLabel}>Employee <span style={{ color: '#fb7185' }}>*</span></label>
+                <select
+                  value={form.employee}
+                  onChange={(e) => setForm({ ...form, employee: e.target.value })}
+                  required
+                  style={css.selectField}
+                >
+                  <option value="">Select Employee</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.first_name} {emp.last_name} ({emp.employee_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={css.fieldLabel}>Date <span style={{ color: '#fb7185' }}>*</span></label>
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  required
+                  style={{ ...css.selectField, colorScheme: 'dark' }}
+                />
+              </div>
+
+              {/* Status */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={css.fieldLabel}>Status <span style={{ color: '#fb7185' }}>*</span></label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {['present', 'absent', 'late', 'half_day'].map((s) => {
+                    const st = STATUS_MAP[s];
+                    const selected = form.status === s;
+                    return (
+                      <div
+                        key={s}
+                        onClick={() => setForm({ ...form, status: s })}
+                        style={{
+                          padding: '7px 14px', borderRadius: '8px',
+                          cursor: 'pointer', fontSize: '12.5px', fontWeight: '600',
+                          background: selected ? st.bg : 'rgba(255,255,255,0.04)',
+                          color: selected ? st.color : '#475569',
+                          border: `1px solid ${selected ? st.color + '40' : 'rgba(255,255,255,0.06)'}`,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {st.label}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                <button type="button" style={css.cancelBtn} onClick={() => setShowModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" style={{ ...css.submitBtn, opacity: submitting ? 0.7 : 1 }} disabled={submitting}>
+                  {submitting ? 'Marking…' : '✓ Mark Attendance'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ─── Styles ─── */
 const css = {
   root: {
     flex: 1, overflowY: 'auto',
-    background: '#0d1018',
-    padding: '24px',
+    background: '#0d1018', padding: '24px',
     fontFamily: "'Outfit', sans-serif",
+    position: 'relative',
   },
-  pageHeader: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: '20px',
+  header: {
+    display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '20px', flexWrap: 'wrap', gap: '12px',
   },
   pageTitle: { fontSize: '18px', fontWeight: '700', color: '#f1f5f9', letterSpacing: '-0.3px' },
   pageSub:   { fontSize: '12px', color: '#475569', marginTop: '3px' },
-  primaryBtn: {
-    padding: '8px 16px', borderRadius: '8px', border: 'none',
-    background: 'rgba(59,130,246,0.15)', color: '#60a5fa',
-    fontSize: '12.5px', fontWeight: '600', cursor: 'pointer',
-    fontFamily: "'Outfit', sans-serif",
-    border: '1px solid rgba(59,130,246,0.25)',
-    transition: 'all 0.15s',
-  },
-  statRow: {
-    display: 'flex', gap: '12px', flexWrap: 'wrap',
-    marginBottom: '20px',
+  addBtn: {
+    padding: '9px 18px', borderRadius: '8px', border: 'none',
+    background: 'linear-gradient(135deg,#3b82f6,#6366f1)',
+    color: '#fff', fontSize: '13px', fontWeight: '700',
+    cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
   },
   filterBar: {
-    display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+    display: 'flex', alignItems: 'center', gap: '10px',
+    flexWrap: 'wrap',
     background: '#13161f',
     border: '1px solid rgba(255,255,255,0.06)',
-    borderRadius: '10px',
-    padding: '12px 16px',
+    borderRadius: '10px', padding: '12px 16px',
     marginBottom: '16px',
-  },
-  searchBox: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    background: '#0d1018', border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: '7px', padding: '6px 12px', flex: 1, minWidth: '180px',
-  },
-  searchInput: {
-    background: 'none', border: 'none', outline: 'none',
-    color: '#e2e8f0', fontFamily: "'Outfit', sans-serif",
-    fontSize: '12.5px', width: '100%',
   },
   filterGroup: { display: 'flex', alignItems: 'center', gap: '7px' },
   filterLabel: { fontSize: '11px', color: '#334155', whiteSpace: 'nowrap' },
@@ -360,8 +391,7 @@ const css = {
     background: '#0d1018', border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: '7px', padding: '6px 10px',
     color: '#94a3b8', fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '11.5px', outline: 'none',
-    colorScheme: 'dark',
+    fontSize: '11.5px', outline: 'none', colorScheme: 'dark',
   },
   selectInput: {
     background: '#0d1018', border: '1px solid rgba(255,255,255,0.08)',
@@ -379,54 +409,66 @@ const css = {
     background: 'rgba(244,63,94,0.1)', color: '#fb7185',
     fontSize: '11.5px', fontWeight: '600', cursor: 'pointer',
     fontFamily: "'Outfit', sans-serif",
-    marginLeft: 'auto',
-  },
-  errorBox: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)',
-    borderRadius: '10px', padding: '12px 18px',
-    color: '#fb7185', fontSize: '13px', marginBottom: '16px',
   },
   tableCard: {
     background: '#13161f',
     border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: '12px', overflow: 'hidden',
   },
-  table: { width: '100%', borderCollapse: 'collapse' },
+  table:      { width: '100%', borderCollapse: 'collapse' },
   th: {
     textAlign: 'left', fontSize: '10.5px', fontWeight: '700',
     letterSpacing: '1px', textTransform: 'uppercase', color: '#1e293b',
     padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)',
-    whiteSpace: 'nowrap',
   },
   td: {
     padding: '11px 16px', fontSize: '12.5px', color: '#94a3b8',
     borderBottom: '1px solid rgba(255,255,255,0.04)',
   },
-  centerCell: {
-    padding: '52px', textAlign: 'center', color: '#334155',
+  centerCell: { padding: '40px', textAlign: 'center', color: '#334155', fontSize: '13px' },
+  overlay: {
+    position: 'fixed', inset: 0,
+    background: 'rgba(0,0,0,0.7)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1000, backdropFilter: 'blur(4px)',
   },
-  loadingWrap: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-    color: '#334155', fontSize: '13px',
+  modal: {
+    background: '#13161f',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '14px', padding: '24px',
+    width: '100%', maxWidth: '420px',
+    boxShadow: '0 25px 50px rgba(0,0,0,0.6)',
   },
-  spinner: {
-    width: '16px', height: '16px', borderRadius: '50%',
-    border: '2px solid rgba(255,255,255,0.06)',
-    borderTopColor: '#3b82f6',
-    animation: 'spin 0.8s linear infinite',
+  modalHeader: {
+    display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: '20px',
   },
-  tableFooter: {
-    padding: '10px 16px',
-    borderTop: '1px solid rgba(255,255,255,0.04)',
-    fontSize: '11.5px', color: '#334155',
+  fieldLabel: { fontSize: '11.5px', fontWeight: '600', color: '#64748b' },
+  selectField: {
+    background: '#0d1018',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '8px', padding: '9px 12px',
+    color: '#e2e8f0', fontFamily: "'Outfit', sans-serif",
+    fontSize: '13px', outline: 'none', cursor: 'pointer', width: '100%',
+  },
+  cancelBtn: {
+    flex: 1, padding: '10px', borderRadius: '8px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    color: '#64748b', fontSize: '13px', fontWeight: '600',
+    cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+  },
+  submitBtn: {
+    flex: 2, padding: '10px', borderRadius: '8px', border: 'none',
+    background: 'linear-gradient(135deg,#3b82f6,#6366f1)',
+    color: '#fff', fontSize: '13px', fontWeight: '700',
+    cursor: 'pointer', fontFamily: "'Outfit', sans-serif",
+  },
+  toast: {
+    position: 'fixed', top: '20px', right: '20px',
+    padding: '12px 20px', borderRadius: '10px',
+    border: '1px solid', fontSize: '13px', fontWeight: '600',
+    zIndex: 2000, backdropFilter: 'blur(10px)',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
   },
 };
-
-// inject spinner keyframes once
-const styleTag = document.createElement('style');
-styleTag.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
-if (!document.head.querySelector('[data-erms-spin]')) {
-  styleTag.setAttribute('data-erms-spin', '1');
-  document.head.appendChild(styleTag);
-}
