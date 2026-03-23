@@ -6,7 +6,6 @@ import Employees   from './pages/Employees';
 import Departments from './pages/Departments';
 import Attendance  from './pages/Attendance';
 import Leaves      from './pages/Leaves';
-import Performance from './pages/Performance';
 import Profile     from './pages/Profile';
 
 export default function App() {
@@ -19,7 +18,6 @@ export default function App() {
       case 'departments': return <Departments />;
       case 'attendance':  return <Attendance  />;
       case 'leaves':      return <Leaves      />;
-      case 'reviews':     return <Performance />;
       case 'profile':     return <Profile     />;
       default:            return <Dashboard   onNavigate={setActivePage} />;
     }

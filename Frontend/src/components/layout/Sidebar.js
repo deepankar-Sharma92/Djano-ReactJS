@@ -6,8 +6,8 @@ const NAV = [
     section: 'Main',
     items: [
       { id: 'dashboard',   icon: '⊞', label: 'Dashboard' },
-      { id: 'employees',   icon: '👥', label: 'Employees',    badgeKey: 'total_employees' },
-      { id: 'departments', icon: '🏢', label: 'Departments',  badgeKey: 'total_departments' },
+      { id: 'employees',   icon: '👥', label: 'Employees',   badgeKey: 'total_employees' },
+      { id: 'departments', icon: '🏢', label: 'Departments', badgeKey: 'total_departments' },
     ],
   },
   {
@@ -15,7 +15,7 @@ const NAV = [
     items: [
       { id: 'attendance', icon: '📅', label: 'Attendance' },
       { id: 'leaves',     icon: '🏖', label: 'Leave Records', badgeKey: 'pending_leaves', warn: true },
-      { id: 'reviews',    icon: '📝', label: 'Performance' },
+      // Performance removed as per requirement
     ],
   },
   {
